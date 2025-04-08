@@ -15,15 +15,14 @@ import androidx.compose.ui.window.application
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.*
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 @Preview
 fun App() {
     val allEffects = effectNameToId.keys.toList()
+    val scope = rememberCoroutineScope()
     val selectedEffects = remember { mutableStateMapOf<String, Boolean>() }
     allEffects.forEach { effect -> selectedEffects.putIfAbsent(effect, false) }
 
@@ -34,6 +33,8 @@ fun App() {
 
     var materialInput by remember { mutableStateOf("") }
     var simulationResult by remember { mutableStateOf("") }
+
+    var isSearching by remember { mutableStateOf(false) }
 
     MaterialTheme {
         Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
@@ -82,19 +83,25 @@ fun App() {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Button(onClick = {
-                        runBlocking {
-                            try {
-                                withTimeout(15000L) {
-                                    val effectIds =
-                                        selectedEffects.filterValues { it }.keys.mapNotNull { effectNameToId[it] }
-                                    val max = maxResultsText.toIntOrNull() ?: 1
-                                    val paths = findPathsToTargetEffectsViaSimulation(
-                                        baseMaterials,
-                                        effectIds,
-                                        maxResults = max
-                                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSearching = true
 
+                                try {
+                                    val effectIds = selectedEffects.filterValues { it }.keys.mapNotNull { effectNameToId[it] }
+                                    val max = maxResultsText.toIntOrNull() ?: 1
+
+                                    // 🔽 非同期にバックグラウンドで実行
+                                    val paths = withContext(Dispatchers.Default) {
+                                        findPathsToTargetEffectsViaSimulation(
+                                            baseMaterials,
+                                            effectIds,
+                                            maxResults = max
+                                        )
+                                    }
+
+                                    // UIスレッドで結果構築
                                     resultText = buildString {
                                         appendLine(paths)
                                         paths.forEachIndexed { i, path ->
@@ -102,13 +109,16 @@ fun App() {
                                             appendLine("効果 : ${getEffectByPath(path).joinToString(", ") { idToEffectName[it]!! }}")
                                         }
                                     }
+                                } catch (e: TimeoutCancellationException) {
+                                    resultText = "15秒経過したため、処理を中断しました。"
+                                } finally {
+                                    isSearching = false
                                 }
-                            } catch (e: TimeoutCancellationException) {
-                                resultText = "15秒経過したため、処理を中断しました。"
                             }
-                        }
-                    }) {
-                        Text("検索")
+                        },
+                        enabled = !isSearching
+                    ) {
+                        Text(if (isSearching) "検索中..." else "検索")
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
