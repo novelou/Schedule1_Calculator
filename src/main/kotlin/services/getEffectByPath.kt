@@ -9,17 +9,29 @@ fun getEffectByPath(path: List<String>): List<Int> {
         val currentMaterialEffect = material.materialToEffectId()
 
         if (index == 0) {
-            // 最初の素材の場合、その効果IDを追加
             effects.add(currentMaterialEffect)
         } else {
-            // それ以降の素材の場合、効果IDを更新
             val updatedEffects = mutableListOf<Int>()
+
             effects.forEach { effect ->
-                findEffectByRequirements(material, effect, effects)?.let { updatedEffects.add(it) } ?: updatedEffects.add(effect)
+                val updated = findEffectByRequirements(material, effect, effects)
+
+                if (updated != null && updated !in effects && updated != effect) {
+                    // レシピで新しい効果に変わる場合、既に追加されていなければ追加
+                    updatedEffects.add(updated)
+                } else {
+                    // 効果が変わらない、もしくは既にある → 元の効果を残す
+                    updatedEffects.add(effect)
+                }
             }
-            updatedEffects.add(currentMaterialEffect)
-            effects.clear() // 既存の効果リストをクリアして更新後のリストを設定
-            effects.addAll(updatedEffects)
+
+            effects.clear()
+            effects.addAll(updatedEffects.distinct())
+
+            // レシピを通じて得られる効果が already 含まれていれば、素材本体の効果も追加
+            if (currentMaterialEffect !in effects) {
+                effects.add(currentMaterialEffect)
+            }
         }
     }
 
