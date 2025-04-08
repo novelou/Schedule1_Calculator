@@ -30,80 +30,155 @@ fun App() {
     var maxResultsText by remember { mutableStateOf("1") }
     var resultText by remember { mutableStateOf("") }
 
+    var selectedTabIndex by remember { mutableStateOf(0) }
+
+    var materialInput by remember { mutableStateOf("") }
+    var simulationResult by remember { mutableStateOf("") }
+
     MaterialTheme {
         Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-            Text("効果を選択してください", style = MaterialTheme.typography.h6)
-
-            // FlowRowを使って横並びに折り返し表示
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                allEffects.forEach { effect ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = selectedEffects[effect] == true,
-                            onCheckedChange = { selectedEffects[effect] = it }
-                        )
-                        Text(effect)
-                    }
+            // タブ
+            TabRow(selectedTabIndex = selectedTabIndex) {
+                Tab(selected = selectedTabIndex == 0, onClick = { selectedTabIndex = 0 }) {
+                    Text("検索")
+                }
+                Tab(selected = selectedTabIndex == 1, onClick = { selectedTabIndex = 1 }) {
+                    Text("シミュレーション")
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("最大結果数:")
-                TextField(
-                    value = maxResultsText,
-                    onValueChange = {
-                        if (it.all { ch -> ch.isDigit() } && it.toIntOrNull() in 1..100)
-                            maxResultsText = it
-                    },
-                    modifier = Modifier.width(100.dp)
-                )
-            }
+            when (selectedTabIndex) {
+                0 -> {
+                    // 検索タブの中身（そのまま）
+                    Text("効果を選択してください", style = MaterialTheme.typography.h6)
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Button(onClick = {
-                runBlocking {
-                    try {
-                        withTimeout(15000L){
-                            val effectIds = selectedEffects.filterValues { it }.keys.mapNotNull { effectNameToId[it] }
-                            val max = maxResultsText.toIntOrNull() ?: 1
-                            val paths = findPathsToTargetEffectsViaSimulation(baseMaterials, effectIds, maxResults = max)
-
-                            resultText = buildString {
-                                appendLine(paths)
-                                paths.forEachIndexed { i, path ->
-                                    appendLine("パターン${i + 1}: ${path.joinToString(" -> ")}")
-                                    appendLine("効果 : ${getEffectByPath(path).joinToString(", ") { idToEffectName[it]!! }}")
-                                }
+                    FlowRow(modifier = Modifier.fillMaxWidth()) {
+                        allEffects.forEach { effect ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = selectedEffects[effect] == true,
+                                    onCheckedChange = { selectedEffects[effect] = it }
+                                )
+                                Text(effect)
                             }
                         }
-                    }catch (e: TimeoutCancellationException){
-                        resultText = "15秒経過したため、処理を中断しました。"
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("最大結果数:")
+                        TextField(
+                            value = maxResultsText,
+                            onValueChange = {
+                                if (it.all { ch -> ch.isDigit() } && it.toIntOrNull() in 1..100)
+                                    maxResultsText = it
+                            },
+                            modifier = Modifier.width(100.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(onClick = {
+                        runBlocking {
+                            try {
+                                withTimeout(15000L) {
+                                    val effectIds =
+                                        selectedEffects.filterValues { it }.keys.mapNotNull { effectNameToId[it] }
+                                    val max = maxResultsText.toIntOrNull() ?: 1
+                                    val paths = findPathsToTargetEffectsViaSimulation(
+                                        baseMaterials,
+                                        effectIds,
+                                        maxResults = max
+                                    )
+
+                                    resultText = buildString {
+                                        appendLine(paths)
+                                        paths.forEachIndexed { i, path ->
+                                            appendLine("パターン${i + 1}: ${path.joinToString(" -> ")}")
+                                            appendLine("効果 : ${getEffectByPath(path).joinToString(", ") { idToEffectName[it]!! }}")
+                                        }
+                                    }
+                                }
+                            } catch (e: TimeoutCancellationException) {
+                                resultText = "15秒経過したため、処理を中断しました。"
+                            }
+                        }
+                    }) {
+                        Text("検索")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text("結果:", style = MaterialTheme.typography.h6)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(resultText)
                     }
                 }
-            }) {
-                Text("検索")
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                1 -> {
+                    // 素材名シミュレーションタブ
+                    val selectedMaterials = remember { mutableStateListOf<String>() }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text("結果:", style = MaterialTheme.typography.h6)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(resultText)
+                    Text("素材を選んでください", style = MaterialTheme.typography.h6)
+
+                    // 折り返し可能な素材ボタンリスト
+                    FlowRow(modifier = Modifier.fillMaxWidth()) {
+                        baseMaterials.forEach { material ->
+                            Button(
+                                onClick = { selectedMaterials.add(material.name) },
+                                modifier = Modifier.padding(4.dp)
+                            ) {
+                                Text(material.name)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 現在の素材リスト表示
+                    Text("選択中の素材: ${selectedMaterials.joinToString(", ")}")
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 効果確認ボタン
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = {
+                            val effects = getEffectByPath(selectedMaterials)
+                            materialInput = buildString {
+                                appendLine(selectedMaterials.joinToString(", "))
+                            }
+                            simulationResult = buildString {
+                                appendLine(effects.joinToString(", ") { idToEffectName[it] ?: "???" })
+                            }
+                        }) {
+                            Text("効果を確認")
+                        }
+                        Button(onClick = {
+                            selectedMaterials.clear()
+                        }) { Text("リストをリセット") }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("選択した素材:", style = MaterialTheme.typography.h6)
+                    Text(materialInput)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("発現した効果", style = MaterialTheme.typography.h6)
+                    Text(simulationResult)
+                }
             }
         }
     }
 }
-
 fun main() = application{
     Window(onCloseRequest = ::exitApplication, title = "効果検索ツール") {
         App()
