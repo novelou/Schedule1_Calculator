@@ -1,7 +1,11 @@
 package services
 
 import resources.baseMaterials
+import resources.rawMaterials
 
 fun String.materialToEffectId(): Int {
-    return baseMaterials.first { it.name == this }.effectId
+    val material = baseMaterials.find { it.name == this }
+        ?: rawMaterials.find { it.name == this }
+        ?: throw NoSuchElementException("Material not found: $this")
+    return material.effectId
 }

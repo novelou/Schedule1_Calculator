@@ -36,6 +36,9 @@ fun App() {
 
     var isSearching by remember { mutableStateOf(false) }
 
+    // 検索タブ用のベース素材選択
+    var searchSelectedRawMaterial by remember { mutableStateOf<String?>(null) }
+
     MaterialTheme {
         Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
             // タブ
@@ -52,7 +55,7 @@ fun App() {
 
             when (selectedTabIndex) {
                 0 -> {
-                    // 検索タブの中身（そのまま）
+                    // 検索タブの中身
                     Text("効果を選択してください", style = MaterialTheme.typography.h6)
 
                     FlowRow(modifier = Modifier.fillMaxWidth()) {
@@ -63,6 +66,25 @@ fun App() {
                                     onCheckedChange = { selectedEffects[effect] = it }
                                 )
                                 Text(effect)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("ベース素材（任意・1つのみ）", style = MaterialTheme.typography.h6)
+                    FlowRow(modifier = Modifier.fillMaxWidth()) {
+                        rawMaterials.forEach { material ->
+                            Button(
+                                onClick = {
+                                    searchSelectedRawMaterial = if (searchSelectedRawMaterial == material.name) null else material.name
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = if (searchSelectedRawMaterial == material.name) MaterialTheme.colors.secondary else MaterialTheme.colors.primary
+                                ),
+                                modifier = Modifier.padding(4.dp)
+                            ) {
+                                Text(material.name)
                             }
                         }
                     }
@@ -91,22 +113,28 @@ fun App() {
                                 try {
                                     val effectIds = selectedEffects.filterValues { it }.keys.mapNotNull { effectNameToId[it] }
                                     val max = maxResultsText.toIntOrNull() ?: 1
+                                    val initialMaterial = rawMaterials.find { it.name == searchSelectedRawMaterial }
 
                                     // 🔽 非同期にバックグラウンドで実行
                                     val paths = withContext(Dispatchers.Default) {
                                         findPathsToTargetEffectsViaSimulation(
                                             baseMaterials,
                                             effectIds,
-                                            maxResults = max
+                                            maxResults = max,
+                                            initialMaterial = initialMaterial
                                         )
                                     }
 
                                     // UIスレッドで結果構築
                                     resultText = buildString {
-                                        appendLine(paths)
-                                        paths.forEachIndexed { i, path ->
-                                            appendLine("パターン${i + 1}: ${path.joinToString(" -> ")}")
-                                            appendLine("効果 : ${getEffectByPath(path).joinToString(", ") { idToEffectName[it]!! }}")
+                                        if (paths.isEmpty()) {
+                                            appendLine("条件を満たす組み合わせは見つかりませんでした。")
+                                        } else {
+                                            paths.forEachIndexed { i, path ->
+                                                appendLine("パターン${i + 1}: ${path.joinToString(" -> ")}")
+                                                appendLine("効果 : ${getEffectByPath(path).joinToString(", ") { idToEffectName[it]!! }}")
+                                                appendLine("---")
+                                            }
                                         }
                                     }
                                 } catch (e: TimeoutCancellationException) {
@@ -137,6 +165,26 @@ fun App() {
                 1 -> {
                     // 素材名シミュレーションタブ
                     val selectedMaterials = remember { mutableStateListOf<String>() }
+                    var selectedRawMaterial by remember { mutableStateOf<String?>(null) }
+
+                    Text("ベース素材（任意・1つのみ）", style = MaterialTheme.typography.h6)
+                    FlowRow(modifier = Modifier.fillMaxWidth()) {
+                        rawMaterials.forEach { material ->
+                            Button(
+                                onClick = {
+                                    selectedRawMaterial = if (selectedRawMaterial == material.name) null else material.name
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = if (selectedRawMaterial == material.name) MaterialTheme.colors.secondary else MaterialTheme.colors.primary
+                                ),
+                                modifier = Modifier.padding(4.dp)
+                            ) {
+                                Text(material.name)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text("素材を選んでください", style = MaterialTheme.typography.h6)
 
@@ -155,16 +203,29 @@ fun App() {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // 現在の素材リスト表示
-                    Text("選択中の素材: ${selectedMaterials.joinToString(", ")}")
+                    val fullPathDisplay = buildString {
+                        if (selectedRawMaterial != null) {
+                            append(selectedRawMaterial)
+                            if (selectedMaterials.isNotEmpty()) append(", ")
+                        }
+                        append(selectedMaterials.joinToString(", "))
+                    }
+                    Text("選択中の素材: $fullPathDisplay")
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // 効果確認ボタン
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
-                            val effects = getEffectByPath(selectedMaterials)
+                            val fullPath = if (selectedRawMaterial != null) {
+                                listOf(selectedRawMaterial!!) + selectedMaterials
+                            } else {
+                                selectedMaterials.toList()
+                            }
+
+                            val effects = getEffectByPath(fullPath)
                             materialInput = buildString {
-                                appendLine(selectedMaterials.joinToString(", "))
+                                appendLine(fullPath.joinToString(", "))
                             }
                             simulationResult = buildString {
                                 appendLine(effects.joinToString(", ") { idToEffectName[it] ?: "???" })
@@ -174,6 +235,7 @@ fun App() {
                         }
                         Button(onClick = {
                             selectedMaterials.clear()
+                            selectedRawMaterial = null
                         }) { Text("リストをリセット") }
                     }
 

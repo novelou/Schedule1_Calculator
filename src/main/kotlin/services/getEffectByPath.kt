@@ -1,7 +1,5 @@
 package services
 
-import resources.idToEffectName
-
 fun getEffectByPath(path: List<String>): List<Int> {
     val effects: MutableList<Int> = mutableListOf()
 
@@ -11,27 +9,41 @@ fun getEffectByPath(path: List<String>): List<Int> {
         if (index == 0) {
             effects.add(currentMaterialEffect)
         } else {
-            val updatedEffects = mutableListOf<Int>()
+            val nextEffects = mutableListOf<Int>()
 
+            // 既存の効果が新しい効果に変化するかチェック
             effects.forEach { effect ->
-                val updated = findEffectByRequirements(material, effect, effects)
+                val newEffects = findEffectByRequirements(material, effect, effects)
 
-                if (updated != null && updated !in effects && updated != effect) {
-                    // レシピで新しい効果に変わる場合、既に追加されていなければ追加
-                    updatedEffects.add(updated)
+                if (newEffects.isNotEmpty()) {
+                    // レシピが存在する場合
+
+                    // 変化先がすべて「素材のデフォルト効果」と同じ場合、
+                    // それは実質的に効果が吸収されて消滅することを意味する。
+                    // ユーザーの意図として、この場合は元の効果を残す（レシピを適用しない）挙動とする。
+                    val isAllSameAsDefault = newEffects.all { it == currentMaterialEffect }
+
+                    if (isAllSameAsDefault) {
+                        nextEffects.add(effect)
+                    } else {
+                        // 素材のデフォルト効果以外の新しい効果があれば追加する
+                        newEffects.forEach { newEffect ->
+                            if (newEffect != currentMaterialEffect) {
+                                nextEffects.add(newEffect)
+                            }
+                        }
+                    }
                 } else {
-                    // 効果が変わらない、もしくは既にある → 元の効果を残す
-                    updatedEffects.add(effect)
+                    // レシピがない場合は元の効果を維持
+                    nextEffects.add(effect)
                 }
             }
 
-            effects.clear()
-            effects.addAll(updatedEffects.distinct())
+            // 素材自体の効果を追加
+            nextEffects.add(currentMaterialEffect)
 
-            // レシピを通じて得られる効果が already 含まれていれば、素材本体の効果も追加
-            if (currentMaterialEffect !in effects) {
-                effects.add(currentMaterialEffect)
-            }
+            effects.clear()
+            effects.addAll(nextEffects.distinct())
         }
     }
 
