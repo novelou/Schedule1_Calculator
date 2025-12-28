@@ -143,8 +143,11 @@ suspend fun findPathsToTargetEffectsViaSimulation(
                             // 処理したビットを消す
                             tempMask = tempMask and (1L shl bit).inv()
                         }
-                        // 素材自体の効果を足す
-                        nextMask = nextMask or materialSelfMask[mIdx]
+                        
+                        // 効果数が8未満の場合のみ、素材自体の効果を追加する
+                        if (java.lang.Long.bitCount(nextMask) < 8) {
+                            nextMask = nextMask or materialSelfMask[mIdx]
+                        }
 
                         // ターゲット判定 ( (A & Target) == Target )
                         if ((nextMask and targetMask) == targetMask) {
