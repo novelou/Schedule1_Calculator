@@ -1,6 +1,5 @@
 @file:OptIn(ExperimentalLayoutApi::class)
 
-import datas.*
 import resources.*
 import services.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
@@ -138,7 +137,7 @@ fun App() {
                                         }
                                     }
                                 } catch (e: TimeoutCancellationException) {
-                                    resultText = "15秒経過したため、処理を中断しました。"
+                                    resultText = "15秒経過したため、処理を中断しました。${e.message}"
                                 } finally {
                                     isSearching = false
                                 }
