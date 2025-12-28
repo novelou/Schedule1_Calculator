@@ -1,34 +1,12 @@
 package services
 
 import datas.Material
+import datas.PathNode
+import datas.SearchState
 import kotlinx.coroutines.*
 import resources.effectNameToId
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
-
-// 【最適化3】パスを連結リストで管理し、リストコピーのコスト(O(N))をなくす(O(1))
-private class PathNode(
-    val parent: PathNode?,
-    val materialName: String,
-    val depth: Int
-) {
-    fun toList(): List<String> {
-        val list = ArrayList<String>()
-        var curr: PathNode? = this
-        while (curr != null) {
-            list.add(curr.materialName)
-            curr = curr.parent
-        }
-        list.reverse()
-        return list
-    }
-}
-
-// 【最適化1】状態をビットマスク(Long)で管理する
-private data class SearchState(
-    val pathNode: PathNode?,
-    val effectsMask: Long
-)
 
 suspend fun findPathsToTargetEffectsViaSimulation(
     materials: List<Material>,
@@ -165,8 +143,11 @@ suspend fun findPathsToTargetEffectsViaSimulation(
                             // 処理したビットを消す
                             tempMask = tempMask and (1L shl bit).inv()
                         }
-                        // 素材自体の効果を足す
-                        nextMask = nextMask or materialSelfMask[mIdx]
+                        
+                        // 効果数が8未満の場合のみ、素材自体の効果を追加する
+                        if (java.lang.Long.bitCount(nextMask) < 8) {
+                            nextMask = nextMask or materialSelfMask[mIdx]
+                        }
 
                         // ターゲット判定 ( (A & Target) == Target )
                         if ((nextMask and targetMask) == targetMask) {

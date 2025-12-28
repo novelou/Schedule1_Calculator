@@ -1,6 +1,5 @@
 @file:OptIn(ExperimentalLayoutApi::class)
 
-import datas.*
 import resources.*
 import services.*
 import androidx.compose.desktop.ui.tooling.preview.Preview
@@ -9,6 +8,11 @@ import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -27,12 +31,16 @@ fun App() {
     allEffects.forEach { effect -> selectedEffects.putIfAbsent(effect, false) }
 
     var maxResultsText by remember { mutableStateOf("1") }
-    var resultText by remember { mutableStateOf("") }
+    
+    // 検索結果の状態
+    var searchResults by remember { mutableStateOf<List<Pair<List<String>, List<Int>>>>(emptyList()) }
+    var searchMessage by remember { mutableStateOf("") }
 
     var selectedTabIndex by remember { mutableStateOf(0) }
 
-    var materialInput by remember { mutableStateOf("") }
-    var simulationResult by remember { mutableStateOf("") }
+    // シミュレーション結果の状態
+    var simulationPath by remember { mutableStateOf<List<String>>(emptyList()) }
+    var simulationEffects by remember { mutableStateOf<List<Int>>(emptyList()) }
 
     var isSearching by remember { mutableStateOf(false) }
 
@@ -63,9 +71,17 @@ fun App() {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(
                                     checked = selectedEffects[effect] == true,
-                                    onCheckedChange = { selectedEffects[effect] = it }
+                                    onCheckedChange = { selectedEffects[effect] = it },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = effectAttributes[effect]?.color ?: MaterialTheme.colors.secondary
+                                    )
                                 )
-                                Text(effect)
+                                OutlinedText(
+                                    text = effect,
+                                    color = effectAttributes[effect]?.color ?: Color.Black,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.body1
+                                )
                             }
                         }
                     }
@@ -109,6 +125,8 @@ fun App() {
                         onClick = {
                             scope.launch {
                                 isSearching = true
+                                searchMessage = ""
+                                searchResults = emptyList()
 
                                 try {
                                     val effectIds = selectedEffects.filterValues { it }.keys.mapNotNull { effectNameToId[it] }
@@ -125,20 +143,15 @@ fun App() {
                                         )
                                     }
 
-                                    // UIスレッドで結果構築
-                                    resultText = buildString {
-                                        if (paths.isEmpty()) {
-                                            appendLine("条件を満たす組み合わせは見つかりませんでした。")
-                                        } else {
-                                            paths.forEachIndexed { i, path ->
-                                                appendLine("パターン${i + 1}: ${path.joinToString(" -> ")}")
-                                                appendLine("効果 : ${getEffectByPath(path).joinToString(", ") { idToEffectName[it]!! }}")
-                                                appendLine("---")
-                                            }
+                                    if (paths.isEmpty()) {
+                                        searchMessage = "条件を満たす組み合わせは見つかりませんでした。"
+                                    } else {
+                                        searchResults = paths.map { path ->
+                                            path to getEffectByPath(path)
                                         }
                                     }
                                 } catch (e: TimeoutCancellationException) {
-                                    resultText = "15秒経過したため、処理を中断しました。"
+                                    searchMessage = "15秒経過したため、処理を中断しました。${e.message}"
                                 } finally {
                                     isSearching = false
                                 }
@@ -158,7 +171,33 @@ fun App() {
                     ) {
                         Text("結果:", style = MaterialTheme.typography.h6)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(resultText)
+                        
+                        if (searchMessage.isNotEmpty()) {
+                            Text(searchMessage)
+                        }
+
+                        searchResults.forEachIndexed { index, (path, effects) ->
+                            Text("パターン${index + 1}: ${path.joinToString(" -> ")} (${path.size})")
+                            
+                            val multiplier = calculateMultiplier(effects)
+                            val formattedMultiplier = "(*%.4f)".format(multiplier)
+
+                            FlowRow {
+                                Text("効果 : ")
+                                effects.forEachIndexed { i, effectId ->
+                                    val name = idToEffectName[effectId] ?: "?"
+                                    val color = effectAttributes[name]?.color ?: Color.Black
+                                    OutlinedText(
+                                        text = name + (if (i < effects.size - 1) ", " else ""),
+                                        color = color,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.body1
+                                    )
+                                }
+                                Text(" $formattedMultiplier")
+                            }
+                            Divider(modifier = Modifier.padding(vertical = 4.dp))
+                        }
                     }
                 }
 
@@ -223,34 +262,95 @@ fun App() {
                                 selectedMaterials.toList()
                             }
 
-                            val effects = getEffectByPath(fullPath)
-                            materialInput = buildString {
-                                appendLine(fullPath.joinToString(", "))
-                            }
-                            simulationResult = buildString {
-                                appendLine(effects.joinToString(", ") { idToEffectName[it] ?: "???" })
-                            }
+                            simulationPath = fullPath
+                            simulationEffects = getEffectByPath(fullPath)
                         }) {
                             Text("効果を確認")
                         }
                         Button(onClick = {
                             selectedMaterials.clear()
                             selectedRawMaterial = null
+                            simulationPath = emptyList()
+                            simulationEffects = emptyList()
                         }) { Text("リストをリセット") }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text("選択した素材:", style = MaterialTheme.typography.h6)
-                    Text(materialInput)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("発現した効果", style = MaterialTheme.typography.h6)
-                    Text(simulationResult)
+                    if (simulationPath.isNotEmpty()) {
+                        Text("選択した素材:", style = MaterialTheme.typography.h6)
+                        Text(simulationPath.joinToString(", "))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("発現した効果", style = MaterialTheme.typography.h6)
+                        
+                        val multiplier = calculateMultiplier(simulationEffects)
+                        val formattedMultiplier = "(*%.4f)".format(multiplier)
+
+                        FlowRow {
+                            simulationEffects.forEachIndexed { i, effectId ->
+                                val name = idToEffectName[effectId] ?: "?"
+                                val color = effectAttributes[name]?.color ?: Color.Black
+                                OutlinedText(
+                                    text = name + (if (i < simulationEffects.size - 1) ", " else ""),
+                                    color = color,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.body1
+                                )
+                            }
+                            Text(" $formattedMultiplier")
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+fun OutlinedText(
+    text: String,
+    color: Color,
+    outlineColor: Color = Color.Black,
+    fontWeight: FontWeight? = null,
+    style: TextStyle = LocalTextStyle.current,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        // 縁取り
+        Text(
+            text = text,
+            color = outlineColor,
+            fontWeight = fontWeight,
+            style = style.copy(
+                drawStyle = Stroke(
+                    miter = 0f,
+                    width = 2f,
+                    join = StrokeJoin.Round
+                )
+            )
+        )
+        // 本体
+        Text(
+            text = text,
+            color = color,
+            fontWeight = fontWeight,
+            style = style
+        )
+    }
+}
+
+fun calculateMultiplier(effectIds: List<Int>): Double {
+    var multiplier = 1.0
+    effectIds.forEach { id ->
+        val name = idToEffectName[id]
+        val attr = effectAttributes[name]
+        if (attr != null) {
+            multiplier *= attr.multiplier
+        }
+    }
+    return multiplier
+}
+
 fun main() = application{
     Window(onCloseRequest = ::exitApplication, title = "効果検索ツール") {
         App()

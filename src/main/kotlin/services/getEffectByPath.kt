@@ -39,8 +39,14 @@ fun getEffectByPath(path: List<String>): List<Int> {
                 }
             }
 
-            // 素材自体の効果を追加
-            nextEffects.add(currentMaterialEffect)
+            // 重複を排除して現在の効果数を確認
+            // 効果数が8未満の場合のみ、素材自体の効果を追加する
+            // (ただし、すでに含まれている場合は追加しても数は増えないので問題ないが、
+            //  ここでは「枠が空いているか」を判定基準とする)
+            val distinctEffects = nextEffects.distinct()
+            if (distinctEffects.size < 8) {
+                nextEffects.add(currentMaterialEffect)
+            }
 
             effects.clear()
             effects.addAll(nextEffects.distinct())
